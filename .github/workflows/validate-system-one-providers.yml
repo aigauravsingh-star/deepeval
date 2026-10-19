@@ -1,0 +1,71 @@
+name: Validate System One provider configuration
+on:
+  push:
+    branches: [validate/system-one-provider-configuration]
+permissions:
+  contents: write
+env:
+  CONFIDENT_TELEMETRY_OPT_OUT: YES
+  DEEPEVAL_TELEMETRY_OPT_OUT: YES
+  DEEPEVAL_DISABLE_DOTENV: "1"
+  PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
+jobs:
+  format:
+    runs-on: ubuntu-latest
+    outputs:
+      sha: ${{ steps.commit.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 43035569de430e6c2b172ef97671658286dd9424
+          fetch-depth: 1
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: python -m pip install black==25.12.0
+      - run: python -m black deepeval/models/system_one/api_model.py deepeval/models/system_one/provider.py deepeval/models/base_model.py deepeval/models/system_one/limits.py deepeval/models/system_one/__init__.py deepeval/models/__init__.py deepeval/config/settings.py deepeval/metrics/utils/models.py deepeval/metrics/jev_eval/utils.py deepeval/metrics/utils/system_one.py deepeval/metrics/utils/system_one_batch.py tests/test_metrics/test_system_one_batch.py tests/test_metrics/test_system_one_providers.py deepeval/test_run/cache.py
+      - id: commit
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add deepeval/models/system_one/api_model.py deepeval/models/system_one/provider.py deepeval/models/base_model.py deepeval/models/system_one/limits.py deepeval/models/system_one/__init__.py deepeval/models/__init__.py deepeval/config/settings.py deepeval/metrics/utils/models.py deepeval/metrics/jev_eval/utils.py deepeval/metrics/utils/system_one.py deepeval/metrics/utils/system_one_batch.py tests/test_metrics/test_system_one_batch.py tests/test_metrics/test_system_one_providers.py deepeval/test_run/cache.py
+          if ! git diff --cached --quiet; then
+            git commit -m "style: format System One provider configuration"
+            git push origin HEAD:feat/system-one-provider-configuration
+          fi
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+  test:
+    needs: format
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.10", "3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.format.outputs.sha }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - run: >-
+          python -m pip install -e . "openai==1.109.1"
+          "pydantic==2.12.5" "pytest==9.0.2" "mcp[cli]==1.26.0"
+          Pillow "black==25.12.0" ruff
+      - name: Formatting of contribution files
+        run: python -m black --check deepeval/models/system_one/api_model.py deepeval/models/system_one/provider.py deepeval/models/base_model.py deepeval/models/system_one/limits.py deepeval/models/system_one/__init__.py deepeval/models/__init__.py deepeval/config/settings.py deepeval/metrics/utils/models.py deepeval/metrics/jev_eval/utils.py deepeval/metrics/utils/system_one.py deepeval/metrics/utils/system_one_batch.py tests/test_metrics/test_system_one_batch.py tests/test_metrics/test_system_one_providers.py deepeval/test_run/cache.py
+      - name: Static checks of new modules
+        run: python -m ruff check --isolated --select E9,F63,F7,F82,F401,F811 deepeval/models/system_one/api_model.py deepeval/models/system_one/provider.py tests/test_metrics/test_system_one_providers.py
+      - name: Provider, eval mode, batching, and settings regressions
+        run: >-
+          python -m pytest -q -p pytest_asyncio.plugin -p no:cacheprovider
+          tests/test_metrics/test_system_one_providers.py
+          tests/test_metrics/test_system_one_batch.py
+          tests/test_metrics/test_jev_eval.py
+          tests/test_metrics/test_conversational_jev_eval.py
+          tests/test_metrics/test_eval_mode.py
+          tests/test_metrics/test_eval_mode_shared.py
+          tests/test_metrics/test_eval_mode_metrics.py
+          tests/test_core/test_config
+          tests/test_core/test_models/test_models_utils.py
